@@ -1,0 +1,14 @@
+Northwind Retail — Gift Returns Addendum
+
+Gift returns are handled differently from standard returns. A gift recipient who
+does not have the original order number may request a Gift Return Code from
+customer service by providing the gift giver's email address.
+
+Gift returns must be requested within 60 days of the delivery date, which is
+double the standard 30 day window described in the refund eligibility policy.
+Refunds for gift returns are issued as store credit rather than to the original
+payment method, so that the gift giver is not notified of the return.
+
+If the gifted item arrived damaged, the gift return is instead treated as a
+defect return and the normal defect rules apply, including the prepaid return
+label described in the return shipping cost policy.

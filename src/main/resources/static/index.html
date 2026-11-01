@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OKF + Spring AI</title>
+<style>
+  :root { --line:#d8dee9; --muted:#5b6673; --ink:#1c2430; --accent:#2f6fd0; --link:#7b4bd0;
+          --ok:#1d7a4c; --warn:#9a6700; --err:#b4232c; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+         color:var(--ink); background:#f6f7f9; }
+  main { max-width:900px; margin:0 auto; padding:32px 20px 64px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 20px; font-size:14px; }
+
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:20px; }
+  .tab { padding:9px 16px; border:none; background:none; font:inherit; cursor:pointer;
+         color:var(--muted); border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tab[aria-selected="true"] { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
+
+  textarea { width:100%; padding:12px; border:1px solid var(--line); border-radius:8px;
+             font:inherit; resize:vertical; min-height:72px; background:#fff; }
+  .row { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center; }
+  button { padding:9px 16px; border:1px solid var(--line); border-radius:8px; background:#fff;
+           font:inherit; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:16px;
+          margin-top:16px; }
+  .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
+             margin:0 0 10px; }
+  .path { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; }
+  .chip { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px;
+          margin:3px 5px 3px 0; }
+  .chip.search { background:#e8f0fc; color:var(--accent); }
+  .chip.link   { background:#f1e9fc; color:var(--link); }
+  .chip.new    { background:#e4f5ec; color:var(--ok); }
+  .legend { font-size:13px; color:var(--muted); margin-bottom:8px; }
+  .answer { white-space:pre-wrap; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:760px){ .grid { grid-template-columns:1fr; } }
+  .note { font-size:13px; color:var(--muted); border-left:3px solid var(--line);
+          padding-left:12px; margin-top:10px; }
+  .err { color:var(--err); }
+  ul { margin:6px 0 0; padding-left:20px; }
+
+  .drop { border:2px dashed var(--line); border-radius:10px; padding:28px; text-align:center;
+          background:#fff; transition:border-color .15s, background .15s; }
+  .drop.over { border-color:var(--accent); background:#f2f7ff; }
+  .drop p { margin:0 0 10px; color:var(--muted); font-size:14px; }
+  input[type=file] { display:none; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th, td { text-align:left; padding:6px 10px 6px 0; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase;
+       letter-spacing:.05em; }
+  .badge { font-size:11.5px; padding:1px 7px; border-radius:4px; }
+  .b-stable{background:#eef1f4;color:#44505e;} .b-draft{background:#fff4e0;color:var(--warn);}
+  .b-deprecated{background:#fdeaec;color:var(--err);}
+  .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--line);
+          border-top-color:var(--accent); border-radius:50%; animation:sp .7s linear infinite;
+          vertical-align:-2px; margin-right:6px; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<main>
+  <h1>OKF + Spring AI</h1>
+  <p class="sub">Vector search finds where to land. OKF links find everything else.</p>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true"  onclick="tab('ask')">Ask</button>
+    <button class="tab" role="tab" aria-selected="false" onclick="tab('upload')">Upload a document</button>
+    <button class="tab" role="tab" aria-selected="false" onclick="tab('bundle')">Knowledge base</button>
+  </div>
+
+  <!-- ───────────────────────── ASK ───────────────────────── -->
+  <section id="p-ask">
+    <textarea id="q">My laptop arrived damaged. Do I pay return shipping, and how long does inspection take once you receive it?</textarea>
+    <div class="row">
+      <button class="primary" onclick="run('retrieve')">Show retrieval only (fast)</button>
+      <button onclick="run('chat')">Ask the chatbot</button>
+      <button onclick="run('compare')">Compare plain RAG vs OKF</button>
+    </div>
+    <p class="note">Retrieval-only skips the LLM and returns in well under a second.
+       Answers run a local 3B model on CPU, so they take appreciably longer.</p>
+    <div id="out-ask"></div>
+  </section>
+
+  <!-- ──────────────────────── UPLOAD ─────────────────────── -->
+  <section id="p-upload" hidden>
+    <div class="drop" id="drop">
+      <p>Drop a PDF, DOCX, PPTX or TXT here — or</p>
+      <button class="primary" onclick="document.getElementById('file').click()">Choose a file</button>
+      <input type="file" id="file" accept=".pdf,.docx,.pptx,.txt,.md,.html">
+      <p id="fname" style="margin-top:10px"></p>
+    </div>
+    <p class="note">The document is chunked, distilled into OKF concepts by the local
+       model, written to <span class="path">okf-bundle/</span> as Markdown, and re-indexed.
+       New concepts land as <b>draft</b> / <b>unverified</b> — review them in git and add a
+       <span class="path">verified:</span> entry to promote them. Extraction makes one model
+       call per chunk, so this is slow; a one-page document is the right size to try.</p>
+    <div id="out-upload"></div>
+  </section>
+
+  <!-- ──────────────────────── BUNDLE ─────────────────────── -->
+  <section id="p-bundle" hidden>
+    <div class="row">
+      <button class="primary" onclick="loadBundle()">Refresh</button>
+      <button onclick="reindex()">Rebuild index from disk</button>
+    </div>
+    <div id="out-bundle"></div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const busy = on => document.querySelectorAll('button').forEach(b => b.disabled = on);
+
+function tab(name) {
+  ['ask','upload','bundle'].forEach(n => $('p-' + n).hidden = (n !== name));
+  document.querySelectorAll('.tab').forEach((b, i) =>
+    b.setAttribute('aria-selected', ['ask','upload','bundle'][i] === name));
+  if (name === 'bundle' && !$('out-bundle').innerHTML) loadBundle();
+}
+
+function working(target, label) {
+  $(target).innerHTML = `<div class="card"><span class="spin"></span>${esc(label)}</div>`;
+}
+
+/* ─────────────── Ask ─────────────── */
+
+function conceptsCard(found, linked) {
+  return `<div class="card">
+    <h2>Retrieval</h2>
+    <div class="legend">
+      <span class="chip search">found by search</span> entered via embedding similarity &nbsp;
+      <span class="chip link">reached by link</span> only the OKF graph could get here
+    </div>
+    ${(found || []).map(e => `<span class="chip search path">${esc(e.path)} &middot; ${e.score.toFixed(3)}</span>`).join('')}
+    ${(linked || []).map(p => `<span class="chip link path">${esc(p)}</span>`).join('')}
+  </div>`;
+}
+
+function answerCard(title, a) {
+  const cites = (a.citedConcepts || []).map(c => `<li class="path">${esc(c)}</li>`).join('');
+  return `<div class="card">
+    <h2>${esc(title)}</h2>
+    <div class="answer">${esc(a.answer)}</div>
+    ${cites ? `<div class="legend" style="margin-top:12px">Cited concepts</div><ul>${cites}</ul>` : ''}
+  </div>`;
+}
+
+async function run(mode) {
+  const question = $('q').value.trim();
+  if (!question) return;
+  busy(true);
+  working('out-ask', mode === 'retrieve' ? 'Searching and walking the graph…'
+        : mode === 'chat' ? 'Retrieving, then generating an answer…'
+        : 'Running both strategies — two model calls…');
+  const started = performance.now();
+  try {
+    let html;
+    if (mode === 'retrieve') {
+      const d = await getJson('/api/retrieve?q=' + encodeURIComponent(question));
+      html = conceptsCard(d.foundBySearch, d.reachedByLink);
+    } else if (mode === 'chat') {
+      const d = await postJson('/api/chat', { question, conversationId: 'ui' });
+      html = answerCard('Answer', d);
+    } else {
+      const d = await postJson('/api/compare', { question });
+      html = conceptsCard(d.foundBySearch, d.reachedByLink)
+           + `<div class="grid">${answerCard('Plain RAG (search only)', d.plainRag)}${answerCard('OKF graph (search + links)', d.okfGraph)}</div>`;
+    }
+    const secs = ((performance.now() - started) / 1000).toFixed(1);
+    $('out-ask').innerHTML = html + `<p class="note">Completed in ${secs}s.</p>`;
+  } catch (e) {
+    $('out-ask').innerHTML = `<div class="card err">${esc(e.message)}</div>`;
+  } finally { busy(false); }
+}
+
+/* ────────────── Upload ────────────── */
+
+const drop = $('drop');
+['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.add('over');
+}));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.remove('over');
+}));
+drop.addEventListener('drop', e => {
+  if (e.dataTransfer.files.length) upload(e.dataTransfer.files[0]);
+});
+$('file').addEventListener('change', e => {
+  if (e.target.files.length) upload(e.target.files[0]);
+});
+
+async function upload(file) {
+  $('fname').textContent = file.name;
+  busy(true);
+  working('out-upload', `Reading “${file.name}”, extracting concepts, re-indexing…`);
+  const started = performance.now();
+  const body = new FormData();
+  body.append('file', file);
+  try {
+    const res = await fetch('/api/ingest', { method: 'POST', body });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const d = await res.json();
+    const secs = ((performance.now() - started) / 1000).toFixed(1);
+
+    const written = (d.conceptsWritten || []).map(p => `<span class="chip new path">${esc(p)}</span>`).join('')
+                 || '<span class="legend">None — see the server log for rejected drafts.</span>';
+
+    $('out-upload').innerHTML = `<div class="card">
+        <h2>Ingested ${esc(d.filename)}</h2>
+        <table>
+          <tr><th>Chunks read</th><td>${d.chunks}</td></tr>
+          <tr><th>Concepts extracted</th><td>${d.conceptsExtracted}</td></tr>
+          <tr><th>Files written</th><td>${(d.conceptsWritten || []).length}</td></tr>
+          <tr><th>Now indexed</th><td>${d.index.conceptsIndexed} of ${d.index.conceptsInBundle} in bundle</td></tr>
+          <tr><th>Broken links</th><td>${d.index.conceptsWithBrokenLinks}</td></tr>
+        </table>
+        <div class="legend" style="margin-top:12px">New concepts</div>
+        ${written}
+      </div>
+      <p class="note">Completed in ${secs}s. Open the <b>Knowledge base</b> tab to see how
+         they linked into the graph, then ask a question about them.</p>`;
+    $('out-bundle').innerHTML = '';   // force a refresh next time that tab opens
+  } catch (e) {
+    $('out-upload').innerHTML = `<div class="card err">Upload failed: ${esc(e.message)}</div>`;
+  } finally { busy(false); $('file').value = ''; }
+}
+
+/* ────────────── Bundle ────────────── */
+
+async function loadBundle() {
+  busy(true);
+  working('out-bundle', 'Reading the bundle…');
+  try {
+    const [concepts, diag] = await Promise.all([
+      getJson('/api/bundle'), getJson('/api/bundle/diagnostics')
+    ]);
+    const rows = concepts.map(c => `<tr>
+        <td class="path">${esc(c.path)}</td>
+        <td>${esc(c.type)}</td>
+        <td><span class="badge b-${esc(c.status)}">${esc(c.status)}</span></td>
+        <td>${esc(c.trust)}</td>
+        <td class="path">${(c.links || []).length ? esc(c.links.join(', ')) : '—'}</td>
+      </tr>`).join('');
+
+    $('out-bundle').innerHTML = `<div class="card">
+        <h2>${concepts.length} concepts</h2>
+        <div style="overflow-x:auto">
+          <table>
+            <tr><th>Path</th><th>Type</th><th>Status</th><th>Trust</th><th>Links to</th></tr>
+            ${rows}
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Diagnostics</h2>
+        <table>
+          <tr><th>Deprecated (never indexed)</th><td class="path">${(diag.deprecatedConcepts || []).join(', ') || '—'}</td></tr>
+          <tr><th>Past stale_after</th><td class="path">${(diag.staleConcepts || []).join(', ') || '—'}</td></tr>
+          <tr><th>Broken links</th><td class="path">${Object.keys(diag.brokenLinks || {}).length ? esc(JSON.stringify(diag.brokenLinks)) : '—'}</td></tr>
+        </table>
+      </div>`;
+  } catch (e) {
+    $('out-bundle').innerHTML = `<div class="card err">${esc(e.message)}</div>`;
+  } finally { busy(false); }
+}
+
+async function reindex() {
+  busy(true);
+  working('out-bundle', 'Re-reading from disk and rebuilding embeddings…');
+  try {
+    const d = await postJson('/api/bundle/reindex', {});
+    $('out-bundle').innerHTML = `<div class="card">
+        <h2>Reindexed</h2>
+        Indexed ${d.conceptsIndexed} concepts into ${d.chunksWritten} chunks
+        (${d.conceptsInBundle} in bundle, ${d.conceptsWithBrokenLinks} with broken links).
+      </div>`;
+    setTimeout(loadBundle, 400);
+  } catch (e) {
+    $('out-bundle').innerHTML = `<div class="card err">${esc(e.message)}</div>`;
+  } finally { busy(false); }
+}
+
+/* ────────────── fetch helpers ────────────── */
+
+async function getJson(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+async function postJson(url, body) {
+  const r = await fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+</script>
+</body>
+</html>

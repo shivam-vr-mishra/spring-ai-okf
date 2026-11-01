@@ -1,0 +1,26 @@
+services:
+  # Ollama is NOT defined here on purpose — it runs natively on the host
+  # (http://localhost:11434) and already has the models pulled. Running a second
+  # copy in a container would fight for the port and re-download several GB.
+  pgvector:
+    image: 'pgvector/pgvector:pg16'
+    environment:
+      - 'POSTGRES_DB=okf'
+      - 'POSTGRES_USER=okf'
+      - 'POSTGRES_PASSWORD=okf'
+    labels:
+      # Lets spring-boot-docker-compose auto-wire the DataSource. No JDBC URL,
+      # username or password needs to appear in application.yml.
+      - "org.springframework.boot.service-connection=postgres"
+    ports:
+      # Container port only — Docker picks a free host port and Spring Boot reads
+      # it back through the service-connection label above. Deliberately NOT
+      # pinned to 5432:5432: this machine already has another pgvector container
+      # bound to 5432, and a fixed mapping would collide with it.
+      # To reach this one directly: docker compose port pgvector 5432
+      - '5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U okf -d okf']
+      interval: 5s
+      timeout: 5s
+      retries: 10

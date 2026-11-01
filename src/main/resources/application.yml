@@ -1,0 +1,79 @@
+server:
+  # Not 8080 — this machine already has something listening there.
+  port: 8085
+
+spring:
+  application:
+    name: okf-rag
+
+  docker-compose:
+    lifecycle-management: start_and_stop
+
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
+
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      init:
+        # Pull a model only if it isn't on the host already.
+        pull-model-strategy: when_missing
+        timeout: 10m
+      chat:
+        model: llama3.2:3b
+        # Keep the model resident. The default is 5m; on a memory-pressured box
+        # eviction is common and reloading 3GB from disk cost ~270s in testing —
+        # far more than the inference itself.
+        keep_alive: 30m
+        options:
+          temperature: 0.1
+          # Ollama defaults to 2048, which silently truncates retrieved concepts.
+          # But the KV cache is allocated for the FULL num-ctx regardless of actual
+          # prompt length, so oversizing it is not free — on this machine 8192 was
+          # pushing an already-full swap over the edge and prefill collapsed to
+          # 3.8 tok/s. 4096 is sized to the real budget:
+          #   4 concepts ~1450 + template ~150 + system ~50 + history ~1200
+          #   + generation ~400  =  ~3250 tokens
+          num-ctx: 4096
+      embedding:
+        model: nomic-embed-text
+
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        # Must match nomic-embed-text's output size. A mismatch fails loudly
+        # on the first write, which is the quickest sanity check available.
+        dimensions: 768
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        table-name: vector_store
+
+# ---------------------------------------------------------------------------
+# OKF-specific settings
+# ---------------------------------------------------------------------------
+okf:
+  # Root of the OKF bundle. Plain Markdown on disk, meant to live in git.
+  bundle-path: ./okf-bundle
+
+  retrieval:
+    # Vector search stage: how many entry concepts to land on.
+    top-k: 3
+    # nomic-embed-text scores this corpus in a narrow 0.55–0.67 band, so a low
+    # threshold admits near-irrelevant concepts as entry points and traversal
+    # then amplifies the noise. 0.62 keeps only genuine landings.
+    similarity-threshold: 0.62
+    # Graph traversal stage: how far to follow authored links from each entry.
+    # Keep this small — a densely linked bundle will otherwise drag the whole
+    # knowledge base into the prompt.
+    max-hops: 1
+    # Prefill dominates latency here (377s for 1447 tokens when memory-starved),
+    # and prefill cost scales with prompt length. Each concept is ~360 tokens, so
+    # dropping 8 -> 4 removes roughly a third of the prompt. Entries are kept
+    # before linked concepts, so the 3 search hits plus the best link survive.
+    max-documents: 4
+
+logging:
+  level:
+    com.okf.rag: DEBUG
