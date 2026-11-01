@@ -98,12 +98,44 @@ docker compose port pgvector 5432   # find the mapped port if you want psql
 ## Run
 
 ```bash
+./start.sh
+```
+
+That's it. The script finds Java 21 itself (the system default here is 17, and
+Maven inherits `JAVA_HOME`, so relying on `java` from `PATH` silently builds
+against the wrong JDK), verifies Docker and Ollama, checks both models are
+pulled, checks the port, warns if memory is tight, then runs the app.
+
+| Command | Does |
+|---|---|
+| `./start.sh` | Preflight checks, then run |
+| `./start.sh --check` | Checks only — useful for diagnosing a broken environment |
+| `./start.sh --pull` | Pull any missing Ollama models first |
+| `./start.sh --skip-checks` | Straight to run |
+| `./stop.sh` | Stop the app and the pgvector container |
+| `./stop.sh --purge` | Also delete the volume — embeddings rebuild from `okf-bundle/` next start |
+
+Sample preflight output:
+
+```
+  ✓ Java 21  →  /usr/lib/jvm/java-1.21.0-openjdk-amd64
+  ✓ Docker is running
+  ✓ Ollama is running at http://localhost:11434
+  ✓ model llama3.2:3b
+  ✓ model nomic-embed-text
+  ✓ Port 8085 is free
+  ! Swap is 1928/2047MB — inference will thrash.
+```
+
+Or run it manually:
+
+```bash
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 ./mvnw spring-boot:run
 ```
 
-Spring Boot starts the pgvector container itself, creates the schema, reads
-`okf-bundle/`, and embeds every non-deprecated concept.
+Either way, Spring Boot starts the pgvector container itself, creates the schema,
+reads `okf-bundle/`, and embeds every non-deprecated concept.
 
 Then open <http://localhost:8085> — a three-tab UI (ask, upload, knowledge base).
 
@@ -139,6 +171,7 @@ reserved filenames), cycle handling, hop limits and deprecated-concept exclusion
 ## Repository layout
 
 ```
+start.sh           Preflight checks + run. stop.sh tears it down.
 okf-bundle/        The OKF knowledge base — plain Markdown, versioned in git.
                    This is the point of the format: diffable, reviewable in a
                    pull request, editable by hand. 6 hand-authored concepts.
